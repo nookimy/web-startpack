@@ -11,43 +11,75 @@ import fs from "fs";
 const basePath = {
     src: "./src",
     dev: "./dev", // Также можно использовать rootFolder
+    files: "./src/files"
 }
 
 const path = {
     src: {
-        files: basePath.src + "/files/**/*.*",
+        files: basePath.files + "/**/*.*",
+        html: basePath.src + "/*.html",
     },
     dev: {
         files: basePath.dev + "/files/",
+        root: basePath.dev,
     },
     watch: {
-        files: basePath.src + "/files/**/*.*",
+        files: basePath.files + "/**/*.*",
+        html: [basePath.src + '/*.html'], // Сюда добавим пути к файлам блоков чуть ниже по коду
     },
 
     clean: basePath.dev,
 }
 
+// Массив для списка папок блоков, заполнится сам чуть ниже по коду
+let blocks = [];
+
+// Получаем список блоков и записываем их в массив blocks
+if (basePath.blocks) {
+    fs.readdirSync(basePath.blocks).forEach(function (directory) {
+        blocks.push(directory);
+        console.log(blocks);
+    });
+}
+
+// Добавляем к path.src.componentsWatch пути к блокам
+blocks.forEach (function (block) {
+    path.watch.scss.push(basePath.components + '/blocks/' + block + '/*.scss');
+});
+
+// Добавляем к path.src.htmlWatch пути к блокам
+blocks.forEach (function (block) {
+    path.watch.html.push(basePath.components + '/blocks/' + block + '/*.html');
+});
+
+// Общие плагины
+import replace from "gulp-replace"; // Поиск и замена
+import plumber from "gulp-plumber"; // Обработка ошибок
+import notify from "gulp-notify"; // Сообщения (подсказки)
+import browsersync from "browser-sync"; // Сообщения (подсказки)
+import newer from "gulp-newer"; // Проверка обновления
+
 // Задачи
 
+// Копирование файлов (тестовая)
 const copy = () => {
     return gulp.src(path.src.files)
         .pipe(gulp.dest(path.dev.files))
 }
 
-    // Подключение плагина DEL
-import {deleteAsync} from "del"
-
-const reset = () => {
-    return deleteAsync([path.clean])
-}
+import posthtml from "gulp-posthtml";
+import include from "posthtml-include";
+import webpHtmlNosvg from "gulp-webp-html-nosvg";
+import versionNumber from "gulp-version-number";
+import htmlBeautify from "gulp-html-beautify";
 
 // Обработка html
-export const html = () => {
-    return app.gulp.src(app.path.src.html)
+const html = () => {
+    return gulp.src(path.src.html)
 
         // Уведомления об ошибках
-        .pipe(app.plugins.plumber(
-            app.plugins.notify.onError({
+        .pipe(plumber(
+            notify.onError({
                 title: "HTML",
                 message: "Error: <%= error.message %>"
             }))
@@ -58,8 +90,9 @@ export const html = () => {
             include()
           ]))
 
-        // Подмена путей до изображений
-        .pipe(app.plugins.replace(/@img\//g, 'img/'))
+          // Подмена путей до изображений
+        .pipe(replace('../', './img/'))
+
 
         // Добавление варианта webp изображений и тега picture
         .pipe(webpHtmlNosvg())
@@ -82,20 +115,35 @@ export const html = () => {
             })
         )
         .pipe(htmlBeautify())
-        .pipe(app.gulp.dest(app.path.build.root))
-        .pipe(app.plugins.browsersync.stream());
+        .pipe(gulp.dest(path.dev.root))
+        .pipe(browsersync.stream());
+}
+
+// Подключение плагина DEL
+import {deleteAsync} from "del"
+
+const reset = () => {
+    return deleteAsync([path.clean])
+}
+
+const configFTP = {
+    host: "", // Адрес FTP сервера
+    user: "", // Имя пользователя
+    password: "", // Пароль
+    parallel: 5 // количество одновременных потоков
 }
 
 // Наблюдатель за изменениями в файлах
 function watcher() {
     gulp.watch(path.watch.files, copy);
+    gulp.watch(path.watch.html, html);
 }
 
 // Основные задач
-const mainTasks = gulp.parallel(copy);
+const mainTasks = gulp.parallel(copy, html);
 
 // Построение сценариев выполнения задач
-const dev = gulp.series(reset, copy, watcher);
+const dev = gulp.series(reset, html, watcher);
 
 export { dev }
 
